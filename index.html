@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <title>Mitt turkart</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .ui { position: fixed; z-index: 1000; left: 10px; top: 10px;
+           background: rgba(255,255,255,.9); padding: 8px 10px; border-radius: 10px;
+           font: 14px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+           box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+    .btn { cursor:pointer; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#f6f6f6 }
+    .btn:active { transform: translateY(1px) }
+    .row { margin-top:6px }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="ui">
+    <label><input type="checkbox" id="toggleOsm"> Vis bakgrunnskart (OSM)</label>
+    <div class="row"><button id="centerBtn" class="btn">📍 Sentrer på meg</button></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // --- Georeferanse fra PNG+PGW (WGS84 lat,lon) ---
+    const topLeft = [59.5463757085, 10.7653628986];
+    const bottomRight = [59.5175829435, 10.8404815972];
+    const imageBounds = [bottomRight, topLeft]; // [SW, NE]
+
+    // --- Kartbilde (må ligge i samme mappe) ---
+    const imageUrl = 'Turkart.png';
+
+    // --- Opprett kart ---
+    const map = L.map('map', { zoomControl: true }).fitBounds(imageBounds);
+
+    // Lås kartet innenfor bildet og sett litt sunne zoomgrenser
+    map.setMaxBounds(imageBounds);
+    map.setMinZoom(map.getZoom() - 1);
+    map.setMaxZoom(22);
+
+    // Overlay-bildet
+    const overlay = L.imageOverlay(imageUrl, imageBounds).addTo(map);
+
+    // Valgfri OSM-bakgrunn for verifisering
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap-bidragsytere'
+    });
+    const toggle = document.getElementById('toggleOsm');
+    // Startverdi via URL ?osm=1
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('osm') === '1') { toggle.checked = true; osm.addTo(map); }
+    toggle.addEventListener('change', () => {
+      if (toggle.checked) osm.addTo(map); else map.removeLayer(osm);
+    });
+
+    // --- GPS: én egen markør + nøyaktighetssirkel ---
+    let gpsMarker = null;
+    let accuracyCircle = null;
+
+    function onLocationFound(e) {
+      if (!gpsMarker) {
+        gpsMarker = L.marker(e.latlng).addTo(map);
+      } else {
+        gpsMarker.setLatLng(e.latlng);
+      }
+      if (!accuracyCircle) {
+        accuracyCircle = L.circle(e.latlng, { radius: e.accuracy, color: 'blue', fillOpacity: 0.2 }).addTo(map);
+      } else {
+        accuracyCircle.setLatLng(e.latlng).setRadius(e.accuracy);
+      }
+    }
+    function onLocationError(err) {
+      console.warn('GPS-feil:', err && err.message ? err.message : err);
+    }
+    map.on('locationfound', onLocationFound);
+    map.on('locationerror', onLocationError);
+
+    // Start kontinuerlig sporing (uten "innebygd" markør – vi håndterer selv)
+    map.locate({ setView: false, watch: true, enableHighAccuracy: true, maxZoom: 20 });
+
+    // Sentrer-knapp
+    document.getElementById('centerBtn').addEventListener('click', () => {
+      if (gpsMarker) map.setView(gpsMarker.getLatLng(), Math.max(map.getZoom(), 18));
+      else map.locate({ setView: true, maxZoom: 18 });
+    });
+
+    // --- PWA Service Worker: robust cache og tvungen oppdatering ---
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js?version=7').then(() => {
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+        }
+      });
+    }
+  </script>
+</body>
+</html>
