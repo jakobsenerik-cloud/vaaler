@@ -65,13 +65,8 @@
 
     // KML sa bildet heter "files/tile_0_0.jpg" – vi bruker samme sti her.
     // Du kan evt. rename til "Turkart.jpg" og endre under.
-    const candidates = [
-      './files/tile_0_0.jpg',
-      './Turkart.jpg',
-      './Turkart.png',
-      './files/Turkart.jpg',
-      './files/Turkart.png'
-    ];
+  const candidates = [
+  './Turkart.png ];
 
     const map = L.map('map');
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap-bidragsytere' });
