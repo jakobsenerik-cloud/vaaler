@@ -1,55 +1,71 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>Turkart – roter & juster</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <link rel="manifest" href="manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <link rel="manifest" href="manifest.json" />
+
+  <!-- Leaflet core -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Leaflet.Toolbar (NØDVENDIG for DistortableImage) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.css"/>
+  <script src="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.js"></script>
+
+  <!-- Leaflet.DistortableImage -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.css"/>
+  <script src="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.js"></script>
+
   <style>
     html, body, #map { height: 100%; margin: 0; }
     .panel {
       position: fixed; z-index: 1000; left: 10px; top: 10px;
       background: rgba(255,255,255,.94); padding: 10px 12px; border-radius: 10px;
       font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      box-shadow: 0 2px 10px rgba(0,0,0,.08);
-      width: 320px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 320px;
     }
     .row { margin-top: 8px; }
     .btn { cursor:pointer; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#f6f6f6 }
     .btn:active { transform: translateY(1px) }
     .range { width: 100%; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
+    .error {
+      position: fixed; z-index: 1100; right: 10px; top: 10px;
+      background: #ffefef; color: #a40000; border: 1px solid #ffbdbd;
+      padding: 8px 10px; border-radius: 8px; display: none;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="err" class="error">❗ Fikk ikke lastet <code>Turkart.png</code>. Sjekk filnavn/plassering.</div>
 
   <div class="panel">
     <div><strong>Roter og justér kartbildet</strong></div>
     <label class="row"><input type="checkbox" id="toggleOsm"> Vis OSM bakgrunn</label>
-    <div class="row">Gjennomsiktighet PNG: <input id="opacity" type="range" min="0" max="100" value="85" class="range"><span id="opVal">85%</span></div>
+    <div class="row">Gjennomsiktighet PNG:
+      <input id="opacity" type="range" min="0" max="100" value="85" class="range">
+      <span id="opVal">85%</span>
+    </div>
     <div class="row">
       <button id="copyCorners" class="btn">Kopier hjørner (NW, NE, SE, SW)</button>
       <button id="exportGeoJSON" class="btn">Eksporter GeoJSON</button>
     </div>
-    <div class="row"><small>Tips: Zoom/pan og dra i hjørnene for å matche OSM (veier, vann, brygger, osv.).</small></div>
+    <div class="row"><small>Tips: Slå på OSM for referanse. Dra i hjørnene til vann/veier matcher.</small></div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.js"></script>
   <script>
-    // Start-hjørner (lat, lon) etter 3.2° rotasjon
-    const NW = [59.54637570846198, 10.765362898559077];
-    const NE = [59.54749304954483, 10.841993687152229];
-    const SE = [59.51975682234328, 10.843530038987451];
-    const SW = [59.51864009419391, 10.766962172867345];
+    // Start-hjørner (lat, lon) – de vi foreslo etter +3.2°
+    const NW = [59.546376, 10.765363];
+    const NE = [59.547493, 10.841994];
+    const SE = [59.519757, 10.843530];
+    const SW = [59.518640, 10.766962];
 
-    const imageUrl = 'Turkart.png'; // Legg denne filen i samme mappe
+    const imageUrl = 'Turkart.png'; // Må ligge i samme mappe som denne HTML-fila
     const map = L.map('map');
 
-    // OSM bakgrunn
+    // OSM-bakgrunn
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap-bidragsytere'
     });
@@ -57,76 +73,81 @@
     if (new URLSearchParams(location.search).get('osm') === '1') { toggle.checked = true; osm.addTo(map); }
     toggle.addEventListener('change', () => toggle.checked ? osm.addTo(map) : map.removeLayer(osm));
 
-    // Sett utsnitt rundt hjørnene
     const bounds = L.latLngBounds([NW, NE, SE, SW]);
     map.fitBounds(bounds.pad(0.2));
 
-    // DistortableImage overlay
-    const overlay = L.distortableImageOverlay(imageUrl, {
-      corners: [NW, NE, SE, SW],
-      selected: true,        // vis håndtak
-      suppressToolbar: false // vis innebygd verktøylinje (rotate/scale/skew)
-    }).addTo(map);
-
-    // Gjennomsiktighet
-    const opacityRange = document.getElementById('opacity');
-    const opVal = document.getElementById('opVal');
-    overlay.setOpacity(parseInt(opacityRange.value,10)/100);
-    opacityRange.addEventListener('input', () => {
-      opVal.textContent = opacityRange.value + '%';
-      overlay.setOpacity(parseInt(opacityRange.value,10)/100);
+    // Sjekk at bildet faktisk finnes før vi oppretter overlay
+    fetch(imageUrl, { method: 'HEAD', cache: 'reload' }).then(resp => {
+      if (!resp.ok) throw new Error('404');
+      initOverlay();
+    }).catch(() => {
+      document.getElementById('err').style.display = 'block';
     });
 
-    function getCornersLL() {
-      // Prøv offisiell metode; fallback til intern felt
-      let corners = [];
-      if (overlay.getCorners) {
-        corners = overlay.getCorners().map(ll => [ll.lat, ll.lng]);
-      } else if (overlay._corners) {
-        corners = overlay._corners.map(c => [c.lat, c.lng]);
+    let overlay; // Distortable overlay
+    function initOverlay() {
+      // Viktig: slå på CORS for å unngå blokkering i enkelte nettlesere
+      overlay = L.distortableImageOverlay(imageUrl, {
+        corners: [NW, NE, SE, SW],
+        selected: true,
+        crossOrigin: 'anonymous',
+        suppressToolbar: false
+      }).addTo(map);
+
+      // Opacity-kontroll
+      const opacityRange = document.getElementById('opacity');
+      const opVal = document.getElementById('opVal');
+      setOpacity();
+      opacityRange.addEventListener('input', setOpacity);
+      function setOpacity() {
+        const v = parseInt(opacityRange.value, 10) / 100;
+        opVal.textContent = Math.round(v * 100) + '%';
+        overlay && overlay.setOpacity(v);
       }
-      // Rekkefølge NW, NE, SE, SW er forventet av plugin
-      return corners;
-    }
 
-    // Kopier hjørner-knapp
-    document.getElementById('copyCorners').addEventListener('click', () => {
-      const c = getCornersLL();
-      if (!c || c.length !== 4) return alert('Fant ikke hjørner');
-      const [nw, ne, se, sw] = c;
-      const txt = `// Hjørner (lat, lon)\n` +
-                  `const NW = [${nw[0].toFixed(6)}, ${nw[1].toFixed(6)}];\n` +
-                  `const NE = [${ne[0].toFixed(6)}, ${ne[1].toFixed(6)}];\n` +
-                  `const SE = [${se[0].toFixed(6)}, ${se[1].toFixed(6)}];\n` +
-                  `const SW = [${sw[0].toFixed(6)}, ${sw[1].toFixed(6)}];`;
-      navigator.clipboard.writeText(txt).then(() => alert('Hjørner kopiert!')).catch(() => { prompt('Kopier manuelt:', txt); });
-    });
+      // Hjelpefunksjon – hent hjørner i NW, NE, SE, SW
+      function getCornersLL() {
+        if (overlay.getCorners) return overlay.getCorners().map(ll => [ll.lat, ll.lng]);
+        if (overlay._corners)   return overlay._corners.map(c => [c.lat, c.lng]);
+        return null;
+      }
 
-    // Eksporter som GeoJSON polygon
-    document.getElementById('exportGeoJSON').addEventListener('click', () => {
-      const c = getCornersLL();
-      if (!c || c.length !== 4) return alert('Fant ikke hjørner');
-      const [nw, ne, se, sw] = c;
-      const poly = {
-        type: 'Feature',
-        properties: { name: 'Turkart.png' },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [[
+      // Kopier hjørner
+      document.getElementById('copyCorners').addEventListener('click', () => {
+        const c = getCornersLL();
+        if (!c || c.length !== 4) return alert('Fant ikke hjørner');
+        const [nw, ne, se, sw] = c;
+        const txt =
+`// Hjørner (lat, lon)
+const NW = [${nw[0].toFixed(6)}, ${nw[1].toFixed(6)}];
+const NE = [${ne[0].toFixed(6)}, ${ne[1].toFixed(6)}];
+const SE = [${se[0].toFixed(6)}, ${se[1].toFixed(6)}];
+const SW = [${sw[0].toFixed(6)}, ${sw[1].toFixed(6)}];`;
+        navigator.clipboard.writeText(txt).then(() => alert('Hjørner kopiert!')).catch(() => { prompt('Kopier manuelt:', txt); });
+      });
+
+      // Eksporter GeoJSON
+      document.getElementById('exportGeoJSON').addEventListener('click', () => {
+        const c = getCornersLL();
+        if (!c || c.length !== 4) return alert('Fant ikke hjørner');
+        const [nw, ne, se, sw] = c;
+        const poly = {
+          type: 'Feature',
+          properties: { name: 'Turkart.png' },
+          geometry: { type: 'Polygon', coordinates: [[
             [nw[1], nw[0]], [ne[1], ne[0]], [se[1], se[0]], [sw[1], sw[0]], [nw[1], nw[0]]
-          ]]
-        }
-      };
-      const blob = new Blob([JSON.stringify(poly, null, 2)], {type: 'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'turkart_corners.geojson'; a.click();
-      URL.revokeObjectURL(url);
-    });
+          ]] }
+        };
+        const blob = new Blob([JSON.stringify(poly, null, 2)], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'turkart_corners.geojson'; a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
 
     // Service worker (cache-busting)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?version=9').then(() => {
+      navigator.serviceWorker.register('sw.js?version=10').then(() => {
         if (navigator.serviceWorker.controller) {
           navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
         }
