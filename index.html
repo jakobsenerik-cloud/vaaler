@@ -10,11 +10,11 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Leaflet.Toolbar (NØDVENDIG for DistortableImage) -->
+  <!-- NØDVENDIG for DistortableImage -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.css"/>
   <script src="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.js"></script>
 
-  <!-- Leaflet.DistortableImage -->
+  <!-- DistortableImage -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.css"/>
   <script src="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.js"></script>
 
@@ -24,7 +24,7 @@
       position: fixed; z-index: 1000; left: 10px; top: 10px;
       background: rgba(255,255,255,.94); padding: 10px 12px; border-radius: 10px;
       font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 320px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 340px;
     }
     .row { margin-top: 8px; }
     .btn { cursor:pointer; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#f6f6f6 }
@@ -33,13 +33,15 @@
     .error {
       position: fixed; z-index: 1100; right: 10px; top: 10px;
       background: #ffefef; color: #a40000; border: 1px solid #ffbdbd;
-      padding: 8px 10px; border-radius: 8px; display: none;
+      padding: 8px 10px; border-radius: 8px; display: none; max-width: 480px;
+      font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }
+    .error code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div id="err" class="error">❗ Fikk ikke lastet <code>Turkart.png</code>. Sjekk filnavn/plassering.</div>
+  <div id="err" class="error"></div>
 
   <div class="panel">
     <div><strong>Roter og justér kartbildet</strong></div>
@@ -56,16 +58,14 @@
   </div>
 
   <script>
-    // Start-hjørner (lat, lon) – de vi foreslo etter +3.2°
+    // Start-hjørner (lat, lon) – forslag etter +3.2° rotasjon
     const NW = [59.546376, 10.765363];
     const NE = [59.547493, 10.841994];
     const SE = [59.519757, 10.843530];
     const SW = [59.518640, 10.766962];
 
-    const imageUrl = 'Turkart.png'; // Må ligge i samme mappe som denne HTML-fila
-    const map = L.map('map');
-
     // OSM-bakgrunn
+    const map = L.map('map');
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap-bidragsytere'
     });
@@ -76,17 +76,48 @@
     const bounds = L.latLngBounds([NW, NE, SE, SW]);
     map.fitBounds(bounds.pad(0.2));
 
-    // Sjekk at bildet faktisk finnes før vi oppretter overlay
-    fetch(imageUrl, { method: 'HEAD', cache: 'reload' }).then(resp => {
-      if (!resp.ok) throw new Error('404');
-      initOverlay();
-    }).catch(() => {
-      document.getElementById('err').style.display = 'block';
-    });
+    // ---- Finn korrekt bildefil (prøv flere varianter + ?img=) ----
+    const qp = new URLSearchParams(location.search);
+    const override = qp.get('img'); // bruk f.eks. ?img=Turkart.PNG eller ?img=img/Turkart.png
+    const candidates = override ? [override] : [
+      './Turkart.png',
+      './turkart.png',
+      './Turkart.PNG',
+      './images/Turkart.png',
+      './img/Turkart.png'
+    ];
 
-    let overlay; // Distortable overlay
-    function initOverlay() {
-      // Viktig: slå på CORS for å unngå blokkering i enkelte nettlesere
+    const errBox = document.getElementById('err');
+
+    async function pickImageUrl() {
+      for (const url of candidates) {
+        try {
+          const bust = (url.includes('?') ? '&' : '?') + 'v=' + Date.now();
+          const resp = await fetch(url + bust, {method: 'HEAD', cache: 'reload'});
+          if (resp.ok) return url; // funnet!
+          console.warn('HEAD failed for', url, resp.status);
+        } catch (e) {
+          console.warn('HEAD error for', url, e);
+        }
+      }
+      // hvis ingen funket
+      const list = candidates.map(u => `<li><code>${u}</code></li>`).join('');
+      errBox.innerHTML = `❗ Fant ikke kartbildet. Prøv å åpne disse direkte i ny fane for å se hvilken som finnes:
+        <ul style="margin:6px 0 0 18px">${list}</ul>
+        Du kan også overstyre med <code>?img=sti/til/fil.png</code> i URLen.`;
+      errBox.style.display = 'block';
+      throw new Error('No image found among candidates.');
+    }
+
+    function showError(msg) {
+      errBox.textContent = msg;
+      errBox.style.display = 'block';
+    }
+
+    let overlay;
+
+    pickImageUrl().then((imageUrl) => {
+      // Last DistortableImage
       overlay = L.distortableImageOverlay(imageUrl, {
         corners: [NW, NE, SE, SW],
         selected: true,
@@ -105,14 +136,12 @@
         overlay && overlay.setOpacity(v);
       }
 
-      // Hjelpefunksjon – hent hjørner i NW, NE, SE, SW
+      // Verktøy: hjørner
       function getCornersLL() {
         if (overlay.getCorners) return overlay.getCorners().map(ll => [ll.lat, ll.lng]);
         if (overlay._corners)   return overlay._corners.map(c => [c.lat, c.lng]);
         return null;
       }
-
-      // Kopier hjørner
       document.getElementById('copyCorners').addEventListener('click', () => {
         const c = getCornersLL();
         if (!c || c.length !== 4) return alert('Fant ikke hjørner');
@@ -136,18 +165,20 @@ const SW = [${sw[0].toFixed(6)}, ${sw[1].toFixed(6)}];`;
           properties: { name: 'Turkart.png' },
           geometry: { type: 'Polygon', coordinates: [[
             [nw[1], nw[0]], [ne[1], ne[0]], [se[1], se[0]], [sw[1], sw[0]], [nw[1], nw[0]]
-          ]] }
+          ]]}
         };
         const blob = new Blob([JSON.stringify(poly, null, 2)], {type: 'application/json'});
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a'); a.href = url; a.download = 'turkart_corners.geojson'; a.click();
         URL.revokeObjectURL(url);
       });
-    }
+    }).catch((e) => {
+      console.error(e);
+    });
 
     // Service worker (cache-busting)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?version=10').then(() => {
+      navigator.serviceWorker.register('sw.js?version=11').then(() => {
         if (navigator.serviceWorker.controller) {
           navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
         }
@@ -156,3 +187,4 @@ const SW = [${sw[0].toFixed(6)}, ${sw[1].toFixed(6)}];`;
   </script>
 </body>
 </html>
+
