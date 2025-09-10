@@ -1,5 +1,5 @@
 {
-  "name": "Turkart – roter & juster",
+  "name": "Turkart (KMZ) – roter & juster",
   "short_name": "Turkart",
   "start_url": "index.html",
   "display": "standalone",
@@ -7,9 +7,9 @@
   "theme_color": "#2c3e50",
   "icons": [
     {
-      "src": "Turkart.png",
+      "src": "files/tile_0_0.jpg",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/jpeg"
     }
   ]
 }
