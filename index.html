@@ -2,7 +2,7 @@
 <html lang="no">
 <head>
   <meta charset="utf-8" />
-  <title>Turkart (KMZ) – roter & juster</title>
+  <title>Turkart – roter & juster (PNG låst)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <link rel="manifest" href="manifest.json" />
 
@@ -10,11 +10,11 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Leaflet.Toolbar (required) -->
+  <!-- NØDVENDIG for DistortableImage -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.css"/>
   <script src="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.js"></script>
 
-  <!-- Leaflet.DistortableImage -->
+  <!-- DistortableImage -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.css"/>
   <script src="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.js"></script>
 
@@ -24,28 +24,21 @@
       position: fixed; z-index: 1000; left: 10px; top: 10px;
       background: rgba(255,255,255,.94); padding: 10px 12px; border-radius: 10px;
       font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 360px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 340px;
     }
     .row { margin-top: 8px; }
     .btn { cursor:pointer; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#f6f6f6 }
     .btn:active { transform: translateY(1px) }
     .range { width: 100%; }
-    .error {
-      position: fixed; z-index: 1100; right: 10px; top: 10px;
-      background: #ffefef; color: #a40000; border: 1px solid #ffbdbd;
-      padding: 8px 10px; border-radius: 8px; display: none; max-width: 520px;
-    }
-    .error code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div id="err" class="error"></div>
 
   <div class="panel">
-    <div><strong>KMZ-basert kart – roter og justér</strong></div>
+    <div><strong>Roter og justér kartbildet</strong></div>
     <label class="row"><input type="checkbox" id="toggleOsm"> Vis OSM bakgrunn</label>
-    <div class="row">Gjennomsiktighet PNG/JPG:
+    <div class="row">Gjennomsiktighet PNG:
       <input id="opacity" type="range" min="0" max="100" value="85" class="range">
       <span id="opVal">85%</span>
     </div>
@@ -53,106 +46,95 @@
       <button id="copyCorners" class="btn">Kopier hjørner (NW, NE, SE, SW)</button>
       <button id="exportGeoJSON" class="btn">Eksporter GeoJSON</button>
     </div>
-    <div class="row"><small>Tips: Slå på OSM for referanse. Dra i hjørnene til vann/veier matcher nøyaktig.</small></div>
+    <div class="row"><small>Tips: Slå på OSM for referanse. Dra i hjørnene til vann/veier matcher.</small></div>
   </div>
 
   <script>
-    // Corners fra KMZ (LatLonBox + rotasjon ≈ -1.514°)
-    const NW = [59.54898398821174, 10.763379289820953];
-    const NE = [59.53746949581459, 11.1991500840538];
-    const SE = [59.379313000788265, 11.194971071179047];
-    const SW = [59.39082749318541, 10.759200276946201];
+    // Start-hjørner (lat, lon) – fra tidligere estimat (kan finjusteres i UI)
+    const NW = [59.546376, 10.765363];
+    const NE = [59.547493, 10.841994];
+    const SE = [59.519757, 10.843530];
+    const SW = [59.518640, 10.766962];
 
-    // KML sa bildet heter "files/tile_0_0.jpg" – vi bruker samme sti her.
-    // Du kan evt. rename til "Turkart.jpg" og endre under.
-  const candidates = [
-  './Turkart.png ];
+    // Lås bildekilde til nøyaktig denne filen (ligger i repo-roten)
+    const imageUrl = './Turkart.png';
 
     const map = L.map('map');
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap-bidragsytere' });
+
+    // OSM-bakgrunn
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap-bidragsytere'
+    });
     const toggle = document.getElementById('toggleOsm');
     if (new URLSearchParams(location.search).get('osm') === '1') { toggle.checked = true; osm.addTo(map); }
     toggle.addEventListener('change', () => toggle.checked ? osm.addTo(map) : map.removeLayer(osm));
 
+    // Sett utsnitt
     const bounds = L.latLngBounds([NW, NE, SE, SW]);
     map.fitBounds(bounds.pad(0.2));
 
-    const errBox = document.getElementById('err');
+    // Opprett overlay
+    const overlay = L.distortableImageOverlay(imageUrl, {
+      corners: [NW, NE, SE, SW],
+      selected: true,
+      crossOrigin: 'anonymous',
+      suppressToolbar: false
+    }).addTo(map);
 
-    async function pickImageUrl() {
-      for (const url of candidates) {
-        try {
-          const resp = await fetch(url + (url.includes('?')?'&':'?') + 'v=' + Date.now(), {method:'HEAD', cache:'reload'});
-          if (resp.ok) return url;
-        } catch (e) {}
-      }
-      errBox.innerHTML = '❗ Fant ikke kartbilde. Sørg for at <code>files/tile_0_0.jpg</code> eller <code>Turkart.jpg/png</code> ligger i repoet. '
-        + 'Du kan også holde KMZ-strukturen og laste opp <code>files/tile_0_0.jpg</code> i en mappe <code>files/</code>.';
-      errBox.style.display = 'block';
-      throw new Error('No image found.');
+    // Opacity-kontroll
+    const opacityRange = document.getElementById('opacity');
+    const opVal = document.getElementById('opVal');
+    setOpacity();
+    opacityRange.addEventListener('input', setOpacity);
+    function setOpacity() {
+      const v = parseInt(opacityRange.value, 10) / 100;
+      opVal.textContent = Math.round(v * 100) + '%';
+      overlay && overlay.setOpacity(v);
     }
 
-    let overlay;
-    pickImageUrl().then((imageUrl) => {
-      overlay = L.distortableImageOverlay(imageUrl, {
-        corners: [NW, NE, SE, SW],
-        selected: true,
-        crossOrigin: 'anonymous',
-        suppressToolbar: false
-      }).addTo(map);
+    // Hent hjørner (NW, NE, SE, SW)
+    function getCornersLL() {
+      if (overlay.getCorners) return overlay.getCorners().map(ll => [ll.lat, ll.lng]);
+      if (overlay._corners)   return overlay._corners.map(c => [c.lat, c.lng]);
+      return null;
+    }
 
-      // Opacity
-      const opacityRange = document.getElementById('opacity');
-      const opVal = document.getElementById('opVal');
-      setOpacity();
-      opacityRange.addEventListener('input', setOpacity);
-      function setOpacity() {
-        const v = parseInt(opacityRange.value, 10)/100;
-        opVal.textContent = Math.round(v*100) + '%';
-        overlay && overlay.setOpacity(v);
-      }
-
-      // Hjørner
-      function getCornersLL() {
-        if (overlay.getCorners) return overlay.getCorners().map(ll => [ll.lat, ll.lng]);
-        if (overlay._corners)   return overlay._corners.map(c => [c.lat, c.lng]);
-        return null;
-      }
-      document.getElementById('copyCorners').addEventListener('click', () => {
-        const c = getCornersLL(); if (!c || c.length !== 4) return alert('Fant ikke hjørner');
-        const [nw, ne, se, sw] = c;
-        const txt =
+    // Kopier hjørner
+    document.getElementById('copyCorners').addEventListener('click', () => {
+      const c = getCornersLL();
+      if (!c || c.length !== 4) return alert('Fant ikke hjørner');
+      const [nw, ne, se, sw] = c;
+      const txt =
 `// Hjørner (lat, lon)
 const NW = [${nw[0].toFixed(6)}, ${nw[1].toFixed(6)}];
 const NE = [${ne[0].toFixed(6)}, ${ne[1].toFixed(6)}];
 const SE = [${se[0].toFixed(6)}, ${se[1].toFixed(6)}];
 const SW = [${sw[0].toFixed(6)}, ${sw[1].toFixed(6)}];`;
-        navigator.clipboard.writeText(txt).then(() => alert('Hjørner kopiert!')).catch(() => { prompt('Kopier manuelt:', txt); });
-      });
-
-      // GeoJSON
-      document.getElementById('exportGeoJSON').addEventListener('click', () => {
-        const c = getCornersLL(); if (!c || c.length !== 4) return alert('Fant ikke hjørner');
-        const [nw, ne, se, sw] = c;
-        const poly = {
-          type: 'Feature',
-          properties: { name: 'KMZ overlay' },
-          geometry: { type: 'Polygon', coordinates: [[
-            [nw[1], nw[0]], [ne[1], ne[0]], [se[1], se[0]], [sw[1], sw[0]], [nw[1], nw[0]]
-          ]] }
-        };
-        const blob = new Blob([JSON.stringify(poly, null, 2)], {type: 'application/json'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'kmz_overlay.geojson'; a.click();
-        URL.revokeObjectURL(url);
-      });
+      navigator.clipboard.writeText(txt).then(() => alert('Hjørner kopiert!')).catch(() => { prompt('Kopier manuelt:', txt); });
     });
 
-    // SW cache-busting
+    // GeoJSON-eksport
+    document.getElementById('exportGeoJSON').addEventListener('click', () => {
+      const c = getCornersLL(); if (!c || c.length !== 4) return alert('Fant ikke hjørner');
+      const [nw, ne, se, sw] = c;
+      const poly = {
+        type: 'Feature',
+        properties: { name: 'Turkart.png' },
+        geometry: { type: 'Polygon', coordinates: [[
+          [nw[1], nw[0]], [ne[1], ne[0]], [se[1], se[0]], [sw[1], sw[0]], [nw[1], nw[0]]
+        ]]}
+      };
+      const blob = new Blob([JSON.stringify(poly, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'turkart_corners.geojson'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Service worker (cache-busting)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?version=12').then(() => {
+      navigator.serviceWorker.register('sw.js?version=13').then(() => {
         if (navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({ type:'SKIP_WAITING' });
+          navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
         }
       });
     }

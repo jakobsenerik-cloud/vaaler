@@ -1,6 +1,6 @@
-// Service worker v12 (network-first + cache-fallback)
-const CACHE_NAME = "turkart-cache-v12";
-const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./files/tile_0_0.jpg"];
+// Service worker v13 (network-first + cache-fallback)
+const CACHE_NAME = "turkart-cache-v13";
+const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./Turkart.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS)).catch(()=>{}));
