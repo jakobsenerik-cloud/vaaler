@@ -2,101 +2,148 @@
 <html lang="no">
 <head>
   <meta charset="utf-8">
-  <title>Mitt turkart</title>
+  <title>Mitt turkart – hjørnejustering</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     html, body, #map { height: 100%; margin: 0; }
-    .ui { position: fixed; z-index: 1000; left: 10px; top: 10px;
-           background: rgba(255,255,255,.9); padding: 8px 10px; border-radius: 10px;
-           font: 14px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-           box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+    .panel {
+      position: fixed; z-index: 1000; left: 10px; top: 10px;
+      background: rgba(255,255,255,.94); padding: 10px 12px; border-radius: 10px;
+      font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      width: 280px;
+    }
+    .row { margin-top: 8px; }
+    .coords { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
     .btn { cursor:pointer; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#f6f6f6 }
     .btn:active { transform: translateY(1px) }
-    .row { margin-top:6px }
+    .range { width: 100%; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
-  <div class="ui">
-    <label><input type="checkbox" id="toggleOsm"> Vis bakgrunnskart (OSM)</label>
+  <div class="panel">
+    <div><strong>Hjørnejustering & gjennomsiktighet</strong></div>
+    <label class="row"><input type="checkbox" id="toggleOsm"> Vis OSM bakgrunn</label>
+    <div class="row">Gjennomsiktighet PNG: <input id="opacity" type="range" min="0" max="100" value="85" class="range"><span id="opVal">85%</span></div>
+    <div class="row coords">NW: <span id="nw"></span></div>
+    <div class="row coords">NE: <span id="ne"></span></div>
+    <div class="row coords">SE: <span id="se"></span></div>
+    <div class="row coords">SW: <span id="sw"></span></div>
+    <div class="row"><button id="copy" class="btn">Kopier kode (topLeft/bottomRight)</button></div>
     <div class="row"><button id="centerBtn" class="btn">📍 Sentrer på meg</button></div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    // --- Georeferanse fra PNG+PGW (WGS84 lat,lon) ---
+    // Start-bounds (fra PNG+PGW)
     const topLeft = [59.5463757085, 10.7653628986];
     const bottomRight = [59.5175829435, 10.8404815972];
-    const imageBounds = [bottomRight, topLeft]; // [SW, NE]
+    const startSW = [bottomRight[0], bottomRight[1]];
+    const startNE = [topLeft[0], topLeft[1]];
+    const startNW = [topLeft[0], bottomRight[1]]; // lat of topLeft, lon of bottomRight? wait careful
+    // Correct derivation:
+    // topLeft = (latN, lonW), bottomRight = (latS, lonE)
+    // NW = (latN, lonW)
+    // NE = (latN, lonE)
+    // SE = (latS, lonE)
+    // SW = (latS, lonW)
+  </script>
+  <script>
+    const latN = topLeft[0], lonW = topLeft[1], latS = bottomRight[0], lonE = bottomRight[1];
+    const NW = [latN, lonW], NE = [latN, lonE], SE = [latS, lonE], SW = [latS, lonW];
 
-    // --- Kartbilde (må ligge i samme mappe) ---
     const imageUrl = 'Turkart.png';
+    const map = L.map('map', { zoomControl: true }).fitBounds([SW, NE]);
 
-    // --- Opprett kart ---
-    const map = L.map('map', { zoomControl: true }).fitBounds(imageBounds);
-
-    // Lås kartet innenfor bildet og sett litt sunne zoomgrenser
-    map.setMaxBounds(imageBounds);
-    map.setMinZoom(map.getZoom() - 1);
-    map.setMaxZoom(22);
-
-    // Overlay-bildet
-    const overlay = L.imageOverlay(imageUrl, imageBounds).addTo(map);
-
-    // Valgfri OSM-bakgrunn for verifisering
+    // OSM layer
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap-bidragsytere'
     });
     const toggle = document.getElementById('toggleOsm');
-    // Startverdi via URL ?osm=1
-    const urlParams = new URLSearchParams(location.search);
-    if (urlParams.get('osm') === '1') { toggle.checked = true; osm.addTo(map); }
-    toggle.addEventListener('change', () => {
-      if (toggle.checked) osm.addTo(map); else map.removeLayer(osm);
+    if (new URLSearchParams(location.search).get('osm') === '1') { toggle.checked = true; osm.addTo(map); }
+    toggle.addEventListener('change', () => toggle.checked ? osm.addTo(map) : map.removeLayer(osm));
+
+    // PNG overlay
+    const overlay = L.imageOverlay(imageUrl, [SW, NE], { opacity: 0.85 }).addTo(map);
+
+    // Draggable corner markers
+    const redIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+      iconSize: [25, 41], iconAnchor: [12, 41], shadowSize: [41, 41]
     });
 
-    // --- GPS: én egen markør + nøyaktighetssirkel ---
-    let gpsMarker = null;
-    let accuracyCircle = null;
+    const mNW = L.marker(NW, { draggable: true, icon: redIcon }).addTo(map).bindPopup('NW (nord-vest)');
+    const mNE = L.marker(NE, { draggable: true, icon: redIcon }).addTo(map).bindPopup('NE (nord-øst)');
+    const mSE = L.marker(SE, { draggable: true, icon: redIcon }).addTo(map).bindPopup('SE (sør-øst)');
+    const mSW = L.marker(SW, { draggable: true, icon: redIcon }).addTo(map).bindPopup('SW (sør-vest)');
 
-    function onLocationFound(e) {
-      if (!gpsMarker) {
-        gpsMarker = L.marker(e.latlng).addTo(map);
-      } else {
-        gpsMarker.setLatLng(e.latlng);
-      }
-      if (!accuracyCircle) {
-        accuracyCircle = L.circle(e.latlng, { radius: e.accuracy, color: 'blue', fillOpacity: 0.2 }).addTo(map);
-      } else {
-        accuracyCircle.setLatLng(e.latlng).setRadius(e.accuracy);
-      }
+    function updateOverlay() {
+      const nw = mNW.getLatLng();
+      const ne = mNE.getLatLng();
+      const se = mSE.getLatLng();
+      const sw = mSW.getLatLng();
+
+      // Finn axis-aligned bounds fra fire hjørner
+      const north = Math.max(nw.lat, ne.lat, se.lat, sw.lat);
+      const south = Math.min(nw.lat, ne.lat, se.lat, sw.lat);
+      const east  = Math.max(nw.lng, ne.lng, se.lng, sw.lng);
+      const west  = Math.min(nw.lng, ne.lng, se.lng, sw.lng);
+
+      overlay.setBounds([[south, west], [north, east]]);
+
+      // Oppdater felter
+      document.getElementById('nw').textContent = nw.lat.toFixed(6) + ', ' + nw.lng.toFixed(6);
+      document.getElementById('ne').textContent = ne.lat.toFixed(6) + ', ' + ne.lng.toFixed(6);
+      document.getElementById('se').textContent = se.lat.toFixed(6) + ', ' + se.lng.toFixed(6);
+      document.getElementById('sw').textContent = sw.lat.toFixed(6) + ', ' + sw.lng.toFixed(6);
     }
-    function onLocationError(err) {
-      console.warn('GPS-feil:', err && err.message ? err.message : err);
-    }
-    map.on('locationfound', onLocationFound);
-    map.on('locationerror', onLocationError);
+    mNW.on('drag', updateOverlay);
+    mNE.on('drag', updateOverlay);
+    mSE.on('drag', updateOverlay);
+    mSW.on('drag', updateOverlay);
+    updateOverlay();
 
-    // Start kontinuerlig sporing (uten "innebygd" markør – vi håndterer selv)
-    map.locate({ setView: false, watch: true, enableHighAccuracy: true, maxZoom: 20 });
-
-    // Sentrer-knapp
-    document.getElementById('centerBtn').addEventListener('click', () => {
-      if (gpsMarker) map.setView(gpsMarker.getLatLng(), Math.max(map.getZoom(), 18));
-      else map.locate({ setView: true, maxZoom: 18 });
+    // Opacity control
+    const opacityRange = document.getElementById('opacity');
+    const opVal = document.getElementById('opVal');
+    overlay.setOpacity(parseInt(opacityRange.value, 10)/100);
+    opacityRange.addEventListener('input', () => {
+      opVal.textContent = opacityRange.value + '%';
+      overlay.setOpacity(parseInt(opacityRange.value, 10)/100);
     });
 
-    // --- PWA Service Worker: robust cache og tvungen oppdatering ---
+    // Copy code button
+    document.getElementById('copy').addEventListener('click', () => {
+      const b = overlay.getBounds();
+      const north = b.getNorth(), south = b.getSouth(), east = b.getEast(), west = b.getWest();
+      const code = `// Lim inn i index.html som faste grenser\n` +
+                   `const topLeft = [${north.toFixed(6)}, ${west.toFixed(6)}];\n` +
+                   `const bottomRight = [${south.toFixed(6)}, ${east.toFixed(6)}];\n` +
+                   `const imageBounds = [bottomRight, topLeft];`;
+      navigator.clipboard.writeText(code).then(() => alert('Koordinater kopiert!')).catch(() => { prompt('Kopier manuelt:', code); });
+    });
+
+    // GPS + center button
+    let gpsMarker=null, accuracyCircle=null;
+    map.locate({ setView:false, watch:true, enableHighAccuracy:true, maxZoom:20 });
+    map.on('locationfound', (e)=>{
+      if (!gpsMarker) gpsMarker = L.marker(e.latlng).addTo(map); else gpsMarker.setLatLng(e.latlng);
+      if (!accuracyCircle) accuracyCircle = L.circle(e.latlng, { radius: e.accuracy, color:'blue', fillOpacity:.2 }).addTo(map);
+      else accuracyCircle.setLatLng(e.latlng).setRadius(e.accuracy);
+    });
+    document.getElementById('centerBtn').addEventListener('click', ()=>{
+      if (gpsMarker) map.setView(gpsMarker.getLatLng(), Math.max(map.getZoom(), 18)); else map.locate({ setView:true, maxZoom:18 });
+    });
+
+    // SW register & cache-bust
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?version=7').then(() => {
-        if (navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
-        }
+      navigator.serviceWorker.register('sw.js?version=8').then(()=>{
+        if (navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type:'SKIP_WAITING' });
       });
     }
   </script>
