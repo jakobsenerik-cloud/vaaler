@@ -2,19 +2,17 @@
 <html lang="no">
 <head>
   <meta charset="utf-8" />
-  <title>Turkart – roter & juster (PNG låst)</title>
+  <title>Turkart – med trygg fallback</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <link rel="manifest" href="manifest.json" />
 
-  <!-- Leaflet core -->
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- NØDVENDIG for DistortableImage -->
+  <!-- DistortableImage (og Toolbar) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.css"/>
   <script src="https://unpkg.com/leaflet-toolbar@0.4.0/dist/leaflet.toolbar.js"></script>
-
-  <!-- DistortableImage -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.css"/>
   <script src="https://unpkg.com/leaflet.distortableimage@0.12.2/dist/leaflet.distortableimage.js"></script>
 
@@ -24,19 +22,26 @@
       position: fixed; z-index: 1000; left: 10px; top: 10px;
       background: rgba(255,255,255,.94); padding: 10px 12px; border-radius: 10px;
       font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 340px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08); width: 360px;
     }
     .row { margin-top: 8px; }
     .btn { cursor:pointer; padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#f6f6f6 }
     .btn:active { transform: translateY(1px) }
     .range { width: 100%; }
+    .banner {
+      position: fixed; right: 10px; top: 10px; z-index: 1100;
+      background: #eef7ff; color: #0b5cab; border: 1px solid #b6dcff;
+      padding: 8px 10px; border-radius: 8px; display: none; max-width: 420px;
+      font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="banner" class="banner"></div>
 
   <div class="panel">
-    <div><strong>Roter og justér kartbildet</strong></div>
+    <div><strong>Turkart – roter & juster (med fallback)</strong></div>
     <label class="row"><input type="checkbox" id="toggleOsm"> Vis OSM bakgrunn</label>
     <div class="row">Gjennomsiktighet PNG:
       <input id="opacity" type="range" min="0" max="100" value="85" class="range">
@@ -46,22 +51,28 @@
       <button id="copyCorners" class="btn">Kopier hjørner (NW, NE, SE, SW)</button>
       <button id="exportGeoJSON" class="btn">Eksporter GeoJSON</button>
     </div>
-    <div class="row"><small>Tips: Slå på OSM for referanse. Dra i hjørnene til vann/veier matcher.</small></div>
+    <div class="row"><small>Hvis «Distort»-håndtak mangler, kjører fallback uten rotasjon.</small></div>
   </div>
 
   <script>
-    // Start-hjørner (lat, lon) – fra tidligere estimat (kan finjusteres i UI)
+    // --- Start-hjørner (lat, lon) for DistortableImage ---
+    // Estimat etter rotasjon. Disse kan du finjustere i UI når plugin er på.
     const NW = [59.546376, 10.765363];
     const NE = [59.547493, 10.841994];
     const SE = [59.519757, 10.843530];
     const SW = [59.518640, 10.766962];
 
-    // Lås bildekilde til nøyaktig denne filen (ligger i repo-roten)
+    // --- Fallback rektangulære grenser (uten rotasjon) ---
+    // Fra PNG+PGW (ikke-rotert): topLeft / bottomRight
+    const topLeft = [59.5463757085, 10.7653628986];
+    const bottomRight = [59.5175829435, 10.8404815972];
+    const axisBounds = [bottomRight, topLeft]; // [SW, NE]
+
+    // Bildefil i repo-roten
     const imageUrl = './Turkart.png';
 
+    // Kart + OSM
     const map = L.map('map');
-
-    // OSM-bakgrunn
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap-bidragsytere'
     });
@@ -69,19 +80,41 @@
     if (new URLSearchParams(location.search).get('osm') === '1') { toggle.checked = true; osm.addTo(map); }
     toggle.addEventListener('change', () => toggle.checked ? osm.addTo(map) : map.removeLayer(osm));
 
-    // Sett utsnitt
-    const bounds = L.latLngBounds([NW, NE, SE, SW]);
-    map.fitBounds(bounds.pad(0.2));
+    // Zoom til et fornuftig utsnitt (begge tilfeller dekker dette)
+    const startBounds = L.latLngBounds([NW, NE, SE, SW]);
+    map.fitBounds(startBounds.pad(0.2));
 
-    // Opprett overlay
-    const overlay = L.distortableImageOverlay(imageUrl, {
-      corners: [NW, NE, SE, SW],
-      selected: true,
-      crossOrigin: 'anonymous',
-      suppressToolbar: false
-    }).addTo(map);
+    const banner = document.getElementById('banner');
+    function showBanner(msg) {
+      banner.textContent = msg;
+      banner.style.display = 'block';
+    }
 
-    // Opacity-kontroll
+    let overlay = null;
+    let usingFallback = false;
+
+    // Prøv DistortableImage først
+    try {
+      if (L && L.distortableImageOverlay) {
+        overlay = L.distortableImageOverlay(imageUrl, {
+          corners: [NW, NE, SE, SW],
+          selected: true,
+          crossOrigin: 'anonymous',
+          suppressToolbar: false
+        }).addTo(map);
+        console.log('DistortableImage-overlay startet.');
+      } else {
+        throw new Error('DistortableImage ikke tilgjengelig');
+      }
+    } catch (e) {
+      console.warn('DistortableImage feilet, bruker fallback.', e);
+      usingFallback = true;
+      // Fallback: vanlig imageOverlay uten rotasjon
+      overlay = L.imageOverlay(imageUrl, axisBounds).addTo(map);
+      showBanner('🔁 Fallback aktiv: viser kartet uten rotasjon (L.imageOverlay).');
+    }
+
+    // Opacity-kontroll (fungerer for begge typer overlay)
     const opacityRange = document.getElementById('opacity');
     const opVal = document.getElementById('opVal');
     setOpacity();
@@ -89,14 +122,24 @@
     function setOpacity() {
       const v = parseInt(opacityRange.value, 10) / 100;
       opVal.textContent = Math.round(v * 100) + '%';
-      overlay && overlay.setOpacity(v);
+      if (overlay.setOpacity) overlay.setOpacity(v);
+      else if (overlay._image) overlay._image.style.opacity = v; // Leaflet <=1.7 fallback
     }
 
-    // Hent hjørner (NW, NE, SE, SW)
+    // Hent hjørner (for DistortableImage) eller beregn fra axisBounds
     function getCornersLL() {
-      if (overlay.getCorners) return overlay.getCorners().map(ll => [ll.lat, ll.lng]);
-      if (overlay._corners)   return overlay._corners.map(c => [c.lat, c.lng]);
-      return null;
+      if (!usingFallback && overlay && overlay.getCorners) {
+        return overlay.getCorners().map(ll => [ll.lat, ll.lng]); // NW, NE, SE, SW (plugin-rekkefølge)
+      }
+      // Fallback: hent fra bounds og lag NW, NE, SE, SW
+      const b = L.latLngBounds(axisBounds);
+      const north = b.getNorth(), south = b.getSouth(), east = b.getEast(), west = b.getWest();
+      return [
+        [north, west], // NW
+        [north, east], // NE
+        [south, east], // SE
+        [south, west]  // SW
+      ];
     }
 
     // Kopier hjørner
@@ -119,10 +162,10 @@ const SW = [${sw[0].toFixed(6)}, ${sw[1].toFixed(6)}];`;
       const [nw, ne, se, sw] = c;
       const poly = {
         type: 'Feature',
-        properties: { name: 'Turkart.png' },
+        properties: { name: usingFallback ? 'Turkart.png (fallback)' : 'Turkart.png (distortable)' },
         geometry: { type: 'Polygon', coordinates: [[
           [nw[1], nw[0]], [ne[1], ne[0]], [se[1], se[0]], [sw[1], sw[0]], [nw[1], nw[0]]
-        ]]}
+        ]]} 
       };
       const blob = new Blob([JSON.stringify(poly, null, 2)], {type: 'application/json'});
       const url = URL.createObjectURL(blob);
@@ -132,7 +175,7 @@ const SW = [${sw[0].toFixed(6)}, ${sw[1].toFixed(6)}];`;
 
     // Service worker (cache-busting)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?version=13').then(() => {
+      navigator.serviceWorker.register('sw.js?version=14').then(() => {
         if (navigator.serviceWorker.controller) {
           navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
         }
