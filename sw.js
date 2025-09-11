@@ -1,5 +1,5 @@
-// Service worker v14 (network-first + cache-fallback)
-const CACHE_NAME = "turkart-cache-v14";
+// Service worker v16
+const CACHE_NAME = "turkart-cache-v16";
 const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./Turkart.png"];
 
 self.addEventListener("install", (event) => {
