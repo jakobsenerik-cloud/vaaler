@@ -1,15 +1,11 @@
 {
-  "name": "Turkart – trygg fallback",
+  "name": "Turkart – produksjon",
   "short_name": "Turkart",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#2c3e50",
   "icons": [
-    {
-      "src": "Turkart.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "Turkart.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
